@@ -1,0 +1,13 @@
+.claude/
+
+# NEVER commit sensitive information
+.env
+
+# Bot runtime state
+state.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

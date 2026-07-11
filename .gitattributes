@@ -1,0 +1,21 @@
+# Default: normalize all text files and always check out with LF (Linux style)
+* text=auto eol=lf
+
+# Force LF for the project's text files (in case auto-detection is wrong)
+*.py    text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+*.env   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.sh    text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Binary files: don't touch line endings
+*.png   binary
+*.jpg   binary
+*.gif   binary
+*.ico   binary
+*.pyc   binary
