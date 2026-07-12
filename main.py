@@ -2,17 +2,18 @@
 CTFtime Discord Bot
 ===================
 Workflow:
-  - Every Monday (00:01 UTC): post the list of CTFtime events starting within the
-    next week to the announcement channel, one message per event with ✅/❌
-    reactions to vote.
+  - Every Monday (00:01 UTC): post up to 3 CTFtime events starting within the next
+    week (most participants first) to the announcement channel, one message per
+    event with ✅/❌ reactions to vote.
   - Every Friday (00:01 UTC): close voting — pick EXACTLY 1 winning event:
       1) the event with the most ✅ votes;
-      2) on a tie (or if nobody voted): the event with the highest weight;
-      3) if weight is also equal: the event with more registered teams (participants).
+      2) on a tie (or if nobody voted): the event with more participants;
+      3) if participants are equal: the event with the highest weight (weight=0 is fine).
     The winning event gets a Discord Scheduled Event created automatically.
   - If there is no event this week: just announce "no events" and do nothing else.
-  - 1st of every month (00:01 UTC): automatically post the team leaderboard + CTFtime top 10.
-  - /leaderboard command: check the team's CTFtime ranking at any time.
+  - 1st of every month (00:01 UTC): automatically post the team's own ranking.
+  - /leaderboard command: check the team's own CTFtime ranking at any time.
+  - /leaderboardtop10 command: show the CTFtime world top 10 on demand (not periodic).
 
 Requirements: Python 3.10+, discord.py >= 2.3, aiohttp, apscheduler
 """
@@ -105,15 +106,14 @@ def event_embed(e: dict) -> discord.Embed:
     return emb
 
 
-async def build_leaderboard_embed() -> discord.Embed:
-    """Embed with your team's ranking + the CTFtime top 10 for the current year."""
+async def build_team_embed() -> discord.Embed:
+    """Embed with your team's CTFtime ranking for the current year."""
     year = str(datetime.now(timezone.utc).year)
     async with aiohttp.ClientSession() as session:
         team = await api_get(session, f"/teams/{CTFTIME_TEAM_ID}/")
-        top = await api_get(session, f"/top/{year}/")
 
     emb = discord.Embed(
-        title=f"🏆 CTFtime Leaderboard {year}",
+        title=f"🏆 CTFtime Ranking {year}",
         url=f"https://ctftime.org/team/{CTFTIME_TEAM_ID}",
         color=0xF1C40F,
     )
@@ -127,11 +127,25 @@ async def build_leaderboard_embed() -> discord.Embed:
         else f"World rank: **#{place}**",
         inline=False,
     )
+    emb.timestamp = datetime.now(timezone.utc)
+    return emb
+
+
+async def build_top10_embed() -> discord.Embed:
+    """Embed with the CTFtime world top 10 for the current year."""
+    year = str(datetime.now(timezone.utc).year)
+    async with aiohttp.ClientSession() as session:
+        top = await api_get(session, f"/top/{year}/")
+
+    emb = discord.Embed(
+        title=f"🌍 CTFtime World Top 10 — {year}",
+        url="https://ctftime.org/stats/",
+        color=0xF1C40F,
+    )
     lines = []
     for i, t in enumerate(top.get(year, [])[:10], start=1):
         lines.append(f"`{i:>2}.` **{t['team_name']}** — {t['points']:.2f} pts")
-    if lines:
-        emb.add_field(name="World Top 10", value="\n".join(lines), inline=False)
+    emb.description = "\n".join(lines) if lines else "No data available."
     emb.timestamp = datetime.now(timezone.utc)
     return emb
 
@@ -148,9 +162,9 @@ async def weekly_post_and_vote():
         await channel.send("No online CTF events on CTFtime this week.")
         return
 
-    # Only put up the 3 best events for voting: highest weight, then most participants.
+    # Only put up the 3 best events for voting: most participants, then weight (weight=0 is fine).
     events.sort(
-        key=lambda e: (float(e.get("weight", 0) or 0), int(e.get("participants", 0) or 0)),
+        key=lambda e: (int(e.get("participants", 0) or 0), float(e.get("weight", 0) or 0)),
         reverse=True,
     )
     events = events[:3]
@@ -158,7 +172,7 @@ async def weekly_post_and_vote():
     await channel.send(
         f"📅 **Top {len(events)} CTF events in the next 7 days**\n"
         f"Vote ✅ on the event you want to play — **the most-voted event will be picked** "
-        f"at **00:01 UTC Friday** (ties are broken by higher weight, then by number of registered teams).\n\n"
+        f"at **00:01 UTC Friday** (ties are broken by number of participants, then weight).\n\n"
         f"@everyone vote for event this weekend"
     )
 
@@ -225,10 +239,10 @@ async def close_votes_and_schedule():
         return
 
     # Pick EXACTLY 1 winning event by priority:
-    #   1) most ✅ votes  2) highest weight  3) most registered teams
-    # (when nobody votes, yes = 0 for all -> automatically falls through to the weight tie-break)
+    #   1) most ✅ votes  2) most participants  3) highest weight (weight=0 is fine)
+    # (when nobody votes, yes = 0 for all -> automatically falls through to the participants tie-break)
     candidates.sort(
-        key=lambda x: (x["yes"], float(x["weight"]), int(x["participants"])),
+        key=lambda x: (x["yes"], int(x["participants"]), float(x["weight"])),
         reverse=True,
     )
     winner = candidates[0]
@@ -238,16 +252,16 @@ async def close_votes_and_schedule():
     if winner["yes"] > 0 and len(top_votes) == 1:
         reason = f"most votes ({winner['yes']} ✅)"
     else:
-        top_weight = [c for c in top_votes if float(c["weight"]) == float(winner["weight"])]
-        if len(top_weight) == 1:
+        top_part = [c for c in top_votes if int(c["participants"]) == int(winner["participants"])]
+        if len(top_part) == 1:
             reason = (
-                f"tied at {winner['yes']} votes → highest weight ({winner['weight']})"
+                f"tied at {winner['yes']} votes → most participants ({winner['participants']} teams)"
                 if winner["yes"] > 0
-                else f"no votes → highest weight ({winner['weight']})"
+                else f"no votes → most participants ({winner['participants']} teams)"
             )
         else:
             reason = (
-                f"tied on votes & weight → most registered teams ({winner['participants']} teams)"
+                f"tied on votes & participants → highest weight ({winner['weight']})"
             )
 
     # Create a Discord Scheduled Event for the winner (if it doesn't exist yet).
@@ -291,18 +305,28 @@ async def monthly_leaderboard():
     if channel is None:
         return
     try:
-        emb = await build_leaderboard_embed()
+        emb = await build_team_embed()
         await channel.send("📊 **Monthly CTFtime ranking report**", embed=emb)
     except Exception:
         log.exception("Failed to send the monthly leaderboard")
 
 
-# ======================= /leaderboard COMMAND =======================
-@tree.command(name="leaderboard", description="Show the team's CTFtime ranking + world top 10")
+# ======================= /leaderboard + /leaderboardtop10 COMMANDS =======================
+@tree.command(name="leaderboard", description="Show the team's own CTFtime ranking")
 async def leaderboard(interaction: discord.Interaction):
     await interaction.response.defer()
     try:
-        emb = await build_leaderboard_embed()
+        emb = await build_team_embed()
+        await interaction.followup.send(embed=emb)
+    except Exception as exc:
+        await interaction.followup.send(f"⚠️ Could not fetch data from CTFtime: `{exc}`")
+
+
+@tree.command(name="leaderboardtop10", description="Show the CTFtime world top 10 teams")
+async def leaderboardtop10(interaction: discord.Interaction):
+    await interaction.response.defer()
+    try:
+        emb = await build_top10_embed()
         await interaction.followup.send(embed=emb)
     except Exception as exc:
         await interaction.followup.send(f"⚠️ Could not fetch data from CTFtime: `{exc}`")

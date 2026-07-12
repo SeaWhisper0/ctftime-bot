@@ -9,17 +9,18 @@ every month.
 
 | Time (UTC) | What the bot does |
 | --- | --- |
-| **Every Monday, 00:01** | Post the list of online CTF events for the next 7 days, one message per event with ✅ / ❌ reactions to vote. |
+| **Every Monday, 00:01** | Post up to **3** online CTF events for the next 7 days (most participants first), one message per event with ✅ / ❌ reactions to vote. |
 | **Every Friday, 00:01** | Close voting → pick **1 winning event** and create a Discord Scheduled Event. |
-| **1st of every month, 00:01** | Post the team leaderboard + CTFtime Top 10 for the current year. |
+| **1st of every month, 00:01** | Post the team's own CTFtime ranking for the current year. |
 
 **How the winning event is chosen** (in priority order):
 1. Most ✅ votes.
-2. On a tie (or if nobody voted) → the event with the higher **weight**.
-3. If weight is also equal → the event with more **registered teams** (participants).
+2. On a tie (or if nobody voted) → the event with more **participants** (registered teams).
+3. If participants are also equal → the event with the higher **weight** (weight = 0 is fine).
 
 **Slash commands:**
-- `/leaderboard` — show the team's CTFtime ranking + world Top 10 (any time).
+- `/leaderboard` — show the team's own CTFtime ranking (any time).
+- `/leaderboardtop10` — show the CTFtime world Top 10 (on demand, not periodic).
 - `/testweekly` — *(Admin)* run the post-list + open-vote job immediately.
 - `/testclose` — *(Admin)* run the close-vote job immediately.
 
