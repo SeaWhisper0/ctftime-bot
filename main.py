@@ -2,14 +2,15 @@
 CTFtime Discord Bot
 ===================
 Workflow:
-  - Every Monday (00:01 UTC): post up to 3 CTFtime events starting within the next
+  - Every Tuesday (00:01 UTC): post up to 3 CTFtime events starting within the next
     week (most participants first) to the announcement channel, one message per
     event with ✅/❌ reactions to vote.
   - Every Friday (00:01 UTC): close voting — pick EXACTLY 1 winning event:
       1) the event with the most ✅ votes;
       2) on a tie (or if nobody voted): the event with more participants;
       3) if participants are equal: the event with the highest weight (weight=0 is fine).
-    The winning event gets a Discord Scheduled Event created automatically.
+    The winning event gets a Discord Scheduled Event created automatically (any
+    already-ended Scheduled Events are deleted first to avoid confusion).
   - If there is no event this week: just announce "no events" and do nothing else.
   - 1st of every month (00:01 UTC): automatically post the team's own ranking.
   - /leaderboard command: check the team's own CTFtime ranking at any time.
@@ -74,17 +75,25 @@ async def api_get(session: aiohttp.ClientSession, path: str, params: dict | None
 
 
 async def fetch_upcoming_events(days: int = 7) -> list[dict]:
-    """Fetch events starting within the next `days` days (online events only)."""
+    """Fetch events *starting* within the next `days` days (online events only)."""
     now = datetime.now(timezone.utc)
+    window_end = now + timedelta(days=days)
+    # CTFtime's `finish` param filters on each event's END time, so an event that
+    # starts inside the window but ends after it gets dropped. Widen the API bound,
+    # then filter by start time ourselves so long events aren't lost.
     params = {
         "limit": 100,
         "start": int(now.timestamp()),
-        "finish": int((now + timedelta(days=days)).timestamp()),
+        "finish": int((window_end + timedelta(days=14)).timestamp()),
     }
     async with aiohttp.ClientSession() as session:
         events = await api_get(session, "/events/", params)
-    # Drop onsite-only events for brevity; remove this filter to show onsite too.
-    return [e for e in events if e.get("onsite") is False]
+    # Keep online events that start within the window (remove the onsite filter to show onsite too).
+    return [
+        e for e in events
+        if e.get("onsite") is False
+        and datetime.fromisoformat(e["start"]) <= window_end
+    ]
 
 
 def event_embed(e: dict) -> discord.Embed:
@@ -100,8 +109,7 @@ def event_embed(e: dict) -> discord.Embed:
     emb.add_field(name="Finish", value=f"<t:{int(finish.timestamp())}:F>", inline=True)
     emb.add_field(name="Format", value=e.get("format", "?"), inline=True)
     emb.add_field(name="Weight", value=str(e.get("weight", "?")), inline=True)
-    if e.get("url"):
-        emb.add_field(name="Website", value=e["url"], inline=False)
+    emb.add_field(name="Participants", value=str(e.get("participants", "?")), inline=True)
     emb.set_footer(text="Vote ✅ to join, ❌ to skip — voting closes 00:01 UTC Friday")
     return emb
 
@@ -150,14 +158,14 @@ async def build_top10_embed() -> discord.Embed:
     return emb
 
 
-# ======================= JOB 1: MONDAY — POST LIST + OPEN VOTE =======================
-async def weekly_post_and_vote():
+# ======================= JOB 1: TUESDAY — POST LIST + OPEN VOTE =======================
+async def weekly_post_and_vote(days: int = 7):
     channel = client.get_channel(ANNOUNCE_CHANNEL_ID)
     if channel is None:
         log.error("Announcement channel %s not found", ANNOUNCE_CHANNEL_ID)
         return
 
-    events = await fetch_upcoming_events(days=7)
+    events = await fetch_upcoming_events(days=days)
     if not events:
         await channel.send("No online CTF events on CTFtime this week.")
         return
@@ -170,7 +178,7 @@ async def weekly_post_and_vote():
     events = events[:3]
 
     await channel.send(
-        f"📅 **Top {len(events)} CTF events in the next 7 days**\n"
+        f"📅 **Top {len(events)} CTF events in the next {days} days**\n"
         f"Vote ✅ on the event you want to play — **the most-voted event will be picked** "
         f"at **00:01 UTC Friday** (ties are broken by number of participants, then weight).\n\n"
         f"@everyone vote for event this weekend"
@@ -264,6 +272,9 @@ async def close_votes_and_schedule():
                 f"tied on votes & participants → highest weight ({winner['weight']})"
             )
 
+    # Clean up any already-ended Scheduled Events before creating the new one.
+    await delete_ended_events(guild)
+
     # Create a Discord Scheduled Event for the winner (if it doesn't exist yet).
     start = datetime.fromisoformat(winner["start"])
     end = datetime.fromisoformat(winner["finish"])
@@ -311,6 +322,18 @@ async def monthly_leaderboard():
         log.exception("Failed to send the monthly leaderboard")
 
 
+async def delete_ended_events(guild: discord.Guild) -> None:
+    """Delete Scheduled Events whose end time has already passed, to avoid confusion."""
+    now = datetime.now(timezone.utc)
+    for ev in guild.scheduled_events:
+        if ev.end_time and ev.end_time < now:
+            try:
+                await ev.delete()
+                log.info("Deleted ended scheduled event: %s", ev.name)
+            except discord.HTTPException:
+                log.exception("Failed to delete scheduled event %s", ev.name)
+
+
 # ======================= /leaderboard + /leaderboardtop10 COMMANDS =======================
 @tree.command(name="leaderboard", description="Show the team's own CTFtime ranking")
 async def leaderboard(interaction: discord.Interaction):
@@ -332,12 +355,12 @@ async def leaderboardtop10(interaction: discord.Interaction):
         await interaction.followup.send(f"⚠️ Could not fetch data from CTFtime: `{exc}`")
 
 
-# Helper commands to test immediately without waiting until Monday / Friday.
-@tree.command(name="testweekly", description="(Admin) Run the post-list + vote job immediately")
+# Helper commands to test immediately without waiting until Tuesday / Friday.
+@tree.command(name="testweekly", description="(Admin) Run the post-list + vote job immediately (next 7 days)")
 @app_commands.checks.has_permissions(manage_guild=True)
 async def testweekly(interaction: discord.Interaction):
-    await interaction.response.send_message("Running the Monday job...", ephemeral=True)
-    await weekly_post_and_vote()
+    await interaction.response.send_message("Running the Tuesday job...", ephemeral=True)
+    await weekly_post_and_vote(days=7)
 
 
 @tree.command(name="testclose", description="(Admin) Run the close-vote job immediately")
@@ -354,8 +377,8 @@ async def on_ready():
     await tree.sync()  # global sync (may take up to 1h to appear; the guild copy is instant)
 
     if not scheduler.running:
-        # Every Monday 00:01 UTC — post list + open vote
-        scheduler.add_job(weekly_post_and_vote, CronTrigger(day_of_week="mon", hour=0, minute=1))
+        # Every Tuesday 00:01 UTC — post list + open vote
+        scheduler.add_job(weekly_post_and_vote, CronTrigger(day_of_week="tue", hour=0, minute=1))
         # Every Friday 00:01 UTC — close vote + create scheduled event
         scheduler.add_job(close_votes_and_schedule, CronTrigger(day_of_week="fri", hour=0, minute=1))
         # 1st of every month 00:01 UTC — post leaderboard
