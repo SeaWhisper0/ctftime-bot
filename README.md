@@ -74,6 +74,7 @@ CTFTIME_TEAM_ID=
 - Go to the Discord Developer Portal → **New Application** → **Bot** tab.
 - Click **Reset Token** → **Copy** it (shown only once) → paste into `.env`. **Never share or commit it.**
 - Invite the bot via **OAuth2 → URL Generator**: scopes `bot` + `applications.commands`, and permissions **View Channels, Send Messages, Embed Links, Add Reactions, Read Message History, Mention Everyone** *(to ping @everyone when voting opens)*, **Manage Events** *(required for Scheduled Events)*.
+- Copy URL -> Open it -> Choose server for bot active.
 
 ---
 ## Security notes
