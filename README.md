@@ -9,7 +9,7 @@ winning event and creates a **Discord Scheduled Event**.
 | Time (UTC) | What the bot does |
 | --- | --- |
 | **Every Tuesday, 00:01** | Post up to **3** online CTF events for the next 7 days (most participants first), one message per event with ✅ / ❌ reactions to vote. |
-| **Every Friday, 00:01** | Close voting → pick **1 winning event** and create a Discord Scheduled Event. |
+| **Every Thursday, 12:01** | Close voting → pick **1 winning event** and create a Discord Scheduled Event. |
 | **1st of every month, 00:01** | Post the team's own CTFtime ranking for the current year. |
 
 **How the winning event is chosen** (in priority order):

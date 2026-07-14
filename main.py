@@ -5,7 +5,7 @@ Workflow:
   - Every Tuesday (00:01 UTC): post up to 3 CTFtime events starting within the next
     week (most participants first) to the announcement channel, one message per
     event with ✅/❌ reactions to vote.
-  - Every Friday (00:01 UTC): close voting — pick EXACTLY 1 winning event:
+  - Every Thursday (12:01 UTC): close voting — pick EXACTLY 1 winning event:
       1) the event with the most ✅ votes;
       2) on a tie (or if nobody voted): the event with more participants;
       3) if participants are equal: the event with the highest weight (weight=0 is fine).
@@ -110,7 +110,7 @@ def event_embed(e: dict) -> discord.Embed:
     emb.add_field(name="Format", value=e.get("format", "?"), inline=True)
     emb.add_field(name="Weight", value=str(e.get("weight", "?")), inline=True)
     emb.add_field(name="Participants", value=str(e.get("participants", "?")), inline=True)
-    emb.set_footer(text="Vote ✅ to join, ❌ to skip — voting closes 00:01 UTC Friday")
+    emb.set_footer(text="Vote ✅ to join — voting closes 12:01 UTC Thursday")
     return emb
 
 
@@ -180,7 +180,7 @@ async def weekly_post_and_vote(days: int = 7):
     await channel.send(
         f"📅 **Top {len(events)} CTF events in the next {days} days**\n"
         f"Vote ✅ on the event you want to play — **the most-voted event will be picked** "
-        f"at **00:01 UTC Friday** (ties are broken by number of participants, then weight).\n\n"
+        f"at **12:01 UTC Thursday** (ties are broken by number of participants, then weight).\n\n"
         f"@everyone vote for event this weekend"
     )
 
@@ -208,7 +208,7 @@ async def weekly_post_and_vote(days: int = 7):
     log.info("Posted %d events and opened voting.", len(events))
 
 
-# ======================= JOB 2: FRIDAY 00:01 UTC — CLOSE VOTE + SCHEDULE =======================
+# ======================= JOB 2: THURSDAY 12:01 UTC — CLOSE VOTE + SCHEDULE =======================
 async def close_votes_and_schedule():
     channel = client.get_channel(ANNOUNCE_CHANNEL_ID)
     guild = client.get_guild(GUILD_ID)
@@ -355,7 +355,7 @@ async def leaderboardtop10(interaction: discord.Interaction):
         await interaction.followup.send(f"⚠️ Could not fetch data from CTFtime: `{exc}`")
 
 
-# Helper commands to test immediately without waiting until Tuesday / Friday.
+# Helper commands to test immediately without waiting until Tuesday / Thursday.
 @tree.command(name="testweekly", description="(Admin) Run the post-list + vote job immediately (next 7 days)")
 @app_commands.checks.has_permissions(manage_guild=True)
 async def testweekly(interaction: discord.Interaction):
@@ -379,8 +379,8 @@ async def on_ready():
     if not scheduler.running:
         # Every Tuesday 00:01 UTC — post list + open vote
         scheduler.add_job(weekly_post_and_vote, CronTrigger(day_of_week="tue", hour=0, minute=1))
-        # Every Friday 00:01 UTC — close vote + create scheduled event
-        scheduler.add_job(close_votes_and_schedule, CronTrigger(day_of_week="fri", hour=0, minute=1))
+        # Every Thursday 12:01 UTC — close vote + create scheduled event
+        scheduler.add_job(close_votes_and_schedule, CronTrigger(day_of_week="thu", hour=12, minute=1))
         # 1st of every month 00:01 UTC — post leaderboard
         scheduler.add_job(monthly_leaderboard, CronTrigger(day=1, hour=0, minute=1))
         scheduler.start()
